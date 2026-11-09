@@ -1,0 +1,37 @@
+changelog:
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking-change
+    - title: Features
+      labels:
+        - feature
+    - title: Fixes
+      labels:
+        - bug
+    - title: Documentation and developer experience
+      labels:
+        - documentation
+        - developer-experience
+    - title: Maintenance
+      labels:
+        - maintenance
+        - dependencies
+    - title: Other changes
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - skip-changelog
+      - duplicate
+      - invalid
+      - question
+      - wontfix
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  ## Full Changelog
+
+  $COMPARE

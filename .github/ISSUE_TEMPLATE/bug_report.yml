@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible issue with CraftRail files or tooling
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove credentials, personal data, and security vulnerabilities. Use private security reporting for vulnerabilities.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Include the relevant file or command.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: Exact steps and command output
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Repository revision, OS, Python version, or agent/version if relevant
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true

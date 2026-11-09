@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a change to the framework
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and users affected
+      description: What task or gap does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the outcome without prescribing unnecessary implementation detail.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Agent-neutrality and compatibility impact
+      description: How does this affect canonical artifacts or optional adapters?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+    validations:
+      required: false
