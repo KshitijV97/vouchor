@@ -1,0 +1,3 @@
+# Isolated documentation-site build dependency. The Core framework and validator
+# remain standard-library-only. Pin the beta to keep local and hosted builds aligned.
+zensical==0.1.0

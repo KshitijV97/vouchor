@@ -1,0 +1,83 @@
+[project]
+site_name = "Vouchor"
+site_description = "Self-hosted, open-source agent engine: verified facts, one approval per batch, exactly-once actions, honest reports."
+site_url = "https://vouchor-docs.example.invalid"
+docs_dir = "docs"
+site_dir = "site"
+strict = true
+nav = [
+  { "Home" = "index.md" },
+  { "Guide" = [
+    "guide/index.md",
+  ] },
+  { "Build journal" = [
+    "build/index.md",
+  ] },
+  { "Engineering reference" = [
+    "project/README.md",
+    "project/product-brief.md",
+    "project/implementation-plan.md",
+    "project/documentation-strategy.md",
+    { "Requirements" = [
+      "project/requirements/functional-requirements.md",
+      "project/requirements/non-functional-requirements.md",
+      "project/requirements/business-rules.md",
+    ] },
+    { "Architecture" = [
+      "project/architecture/overview.md",
+      "project/architecture/system-context.md",
+      "project/architecture/containers.md",
+      "project/architecture/components.md",
+      "project/architecture/data-flow.md",
+      "project/architecture/security-and-trust-boundaries.md",
+    ] },
+    { "Decisions" = [
+      "project/decisions/README.md",
+      "project/decisions/ADR-001-adopt-craftrail-and-atep-blueprint-with-amendments.md",
+      "project/decisions/ADR-002-python-toolchain-and-quality-gates.md",
+      "project/decisions/ADR-003-durable-orchestration-langgraph-dynamic-interrupt.md",
+      "project/decisions/ADR-004-postgres-source-of-truth-valkey-for-coordination.md",
+      "project/decisions/ADR-005-versioned-migrations-alembic-sql.md",
+      "project/decisions/ADR-006-portable-deployment-kubernetes-helm-opentofu.md",
+      "project/decisions/ADR-007-provider-native-idempotency-markers.md",
+      "project/decisions/ADR-008-tier4-sandbox-isolation-backends.md",
+      "project/decisions/ADR-009-license-agpl-3-0-or-later.md",
+    ] },
+    "project/stakeholders.md",
+    "project/glossary.md",
+    "project/engineering-principles.md",
+    "project/vision/atep-blueprint.md",
+  ] },
+  { "Engineering workflow (CraftRail)" = [
+    "framework/overview.md",
+    "framework/workflow.md",
+    "framework/workflow-prompts.md",
+    "framework/feature-specification-guide.md",
+    "framework/requirements-writing-guide.md",
+    "framework/adr-guide.md",
+    "framework/traceability-and-verification.md",
+    "framework/python-quality.md",
+    "framework/validation.md",
+    "framework/documentation-site.md",
+  ] },
+]
+extra_css = ["stylesheets/extra.css"]
+
+[project.theme]
+features = [
+  "navigation.sections",
+  "navigation.path",
+  "navigation.footer",
+  "navigation.top",
+  "toc.follow",
+]
+favicon = "images/favicon.svg"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+pymdownx.details = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CraftRail">
+  <rect width="64" height="64" rx="14" fill="#132a3a"/>
+  <path d="M20 13v38M44 13v38M20 22h24M20 32h24M20 42h24" fill="none" stroke="#68d6b0" stroke-linecap="round" stroke-width="5"/>
+</svg>
