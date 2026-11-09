@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:craftrail:schema:graph:1",
+  "title": "CraftRail graph export v1",
+  "description": "Output of scripts/export_graph.py and input of CraftRail Studio. Deterministic for a given commit and clean working tree: object keys sorted, arrays ordered as documented.",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "repo", "items", "links", "events", "metrics", "diagnostics", "config"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "generated_at": { "type": "string", "format": "date-time", "description": "HEAD commit time (UTC), or export time if not a Git repository." },
+    "generator": { "type": "string", "description": "Tool name and version, e.g. 'craftrail-export 0.3.0'." },
+    "repo": { "$ref": "#/$defs/repo" },
+    "items": {
+      "type": "array",
+      "description": "Ordered by key (natural sort: feature number, then prefix, then number).",
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "links": {
+      "type": "array",
+      "description": "Ordered by source, type, target.",
+      "items": { "$ref": "#/$defs/link" }
+    },
+    "events": {
+      "type": "array",
+      "description": "Ordered by timestamp, then commit, then key.",
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "metrics": {
+      "type": "array",
+      "description": "Ordered by metric id.",
+      "items": { "$ref": "#/$defs/metric" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "description": "Ordered by file, line, code.",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "config": { "$ref": "#/$defs/config" }
+  },
+  "$defs": {
+    "key": {
+      "type": "string",
+      "description": "Canonical item key. Features: 'F003'. Feature-local: '003:TASK-002'. Project-wide: 'FR-012', 'ADR-004'.",
+      "pattern": "^(F[0-9]{3,}|[0-9]{3,}:(AC|TASK|TEST)-[0-9]{3,}|(BR|FR|NFR|CON|US|ADR)-[0-9]{3,})$"
+    },
+    "location": {
+      "type": "object",
+      "required": ["file", "line"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "description": "Repository-relative POSIX path." },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "repo": {
+      "type": "object",
+      "required": ["root_name", "commit", "branch", "dirty", "shallow", "has_git"],
+      "additionalProperties": false,
+      "properties": {
+        "root_name": { "type": "string", "description": "Directory name only, never an absolute path." },
+        "commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+        "branch": { "type": ["string", "null"] },
+        "dirty": { "type": "boolean" },
+        "shallow": { "type": "boolean" },
+        "has_git": { "type": "boolean" },
+        "forge_url_template": {
+          "type": ["string", "null"],
+          "description": "From config, e.g. 'https://github.com/o/r/blob/{commit}/{file}#L{line}'."
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "required": ["key", "type", "kind", "scope", "title", "status", "location"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "type": { "enum": ["feature", "requirement", "acceptance_criterion", "task", "verification", "adr"] },
+        "kind": { "enum": ["FEATURE", "BR", "FR", "NFR", "CON", "US", "AC", "TASK", "TEST", "ADR"] },
+        "scope": { "type": "string", "description": "'project' or the feature number for feature-local items.", "pattern": "^(project|[0-9]{3,})$" },
+        "feature": { "type": ["string", "null"], "pattern": "^[0-9]{3,}$", "description": "Owning feature number, if any." },
+        "title": { "type": "string" },
+        "status": { "type": "string", "pattern": "^[a-z][a-z-]*$" },
+        "status_note": { "type": ["string", "null"], "description": "Parenthetical note, e.g. 'illustrative'." },
+        "derived_status": { "type": "boolean", "default": false, "description": "True when status is computed (acceptance criteria)." },
+        "owner": { "type": ["string", "null"] },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "estimate": { "type": ["number", "null"], "minimum": 0 },
+        "evidence": { "type": ["string", "null"], "description": "Verification evidence cell text, if any." },
+        "excerpt": { "type": "string", "maxLength": 1000, "description": "Plain-text excerpt for search and context packs." },
+        "location": { "$ref": "#/$defs/location" },
+        "frozen": { "type": "boolean", "default": false, "description": "True when the source file has errors that make editing unsafe." },
+        "attributes": {
+          "type": "object",
+          "description": "Other recognised table cells and front-matter keys, by normalised header name.",
+          "additionalProperties": { "type": ["string", "number", "boolean", "null", "array"] }
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["source", "type", "target", "location"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "$ref": "#/$defs/key" },
+        "type": { "enum": ["implements", "refines", "depends_on", "verified_by", "verifies", "belongs_to", "related", "supersedes", "mentions"] },
+        "target": { "$ref": "#/$defs/key" },
+        "location": { "$ref": "#/$defs/location" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["key", "type", "commit", "timestamp", "author"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "type": { "enum": ["item_created", "status_changed", "owner_changed", "item_removed"] },
+        "from": { "type": ["string", "null"] },
+        "to": { "type": ["string", "null"] },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "author": { "type": "string", "description": "Author name only. Email addresses are never exported." },
+        "file": { "type": "string" }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["id", "label", "definition", "unit", "partial", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "linked_coverage_requirements",
+            "linked_coverage_acceptance",
+            "cycle_time",
+            "lead_time",
+            "throughput_weekly",
+            "wip_daily",
+            "cumulative_flow_daily",
+            "burnup_daily",
+            "ageing",
+            "blocked_age",
+            "adr_staleness"
+          ]
+        },
+        "label": { "type": "string" },
+        "definition": { "type": "string", "description": "Human-readable definition shown next to the metric." },
+        "unit": { "enum": ["ratio", "days", "count", "items"] },
+        "partial": { "type": "boolean" },
+        "partial_reason": { "type": ["string", "null"], "enum": [null, "shallow-clone", "no-git", "no-history-flag", "since-ref"] },
+        "scope": { "type": "string", "description": "Item type the metric covers, e.g. 'task'." },
+        "data": {
+          "description": "Shape depends on id: summary {value|median|p85, numerator, denominator}, series [{date, ...}], or per-item [{key, value}].",
+          "type": ["object", "array"]
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["severity", "code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "severity": { "enum": ["error", "warning", "info"] },
+        "code": {
+          "type": "string",
+          "description": "Stable code, e.g. frontmatter-invalid, deprecated-metadata, duplicate-id, unknown-status, dangling-reference, table-header-unknown, merge-conflict, file-too-large, non-utf8, feature-number-duplicate, gap-requirement-without-ac.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "message": { "type": "string" },
+        "file": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "key": { "anyOf": [{ "$ref": "#/$defs/key" }, { "type": "null" }] }
+      }
+    },
+    "config": {
+      "type": "object",
+      "description": "Effective configuration (defaults merged with .craftrail/studio.json).",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_globs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["docs/project/**/*.md", "specs/**/*.md", "docs/**/decisions/*.md"]
+        },
+        "exempt_globs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["templates/**", "specs/000-example-*/**", "docs/examples/**"]
+        },
+        "board_columns": {
+          "type": "object",
+          "description": "Item type -> ordered list of columns; each column lists the statuses it contains.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "statuses"],
+              "additionalProperties": false,
+              "properties": {
+                "label": { "type": "string" },
+                "statuses": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              }
+            }
+          }
+        },
+        "blocked_threshold_days": { "type": "integer", "minimum": 1, "default": 5 },
+        "adr_stale_days": { "type": "integer", "minimum": 1, "default": 14 },
+        "context_budget_chars": { "type": "integer", "minimum": 1000, "default": 8000 },
+        "forge_url_template": { "type": ["string", "null"], "default": null }
+      }
+    }
+  }
+}
