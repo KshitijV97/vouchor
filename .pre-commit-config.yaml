@@ -1,0 +1,43 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy strict type check
+        entry: mypy --strict scripts tests
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: docs-validator
+        name: documentation validator
+        entry: python scripts/validate_docs.py
+        language: system
+        pass_filenames: false
+      - id: pytest
+        name: tests with coverage
+        entry: pytest -q
+        language: python
+        additional_dependencies:
+          - pytest==9.2.0
+          - pytest-cov==7.1.0
+        pass_filenames: false
+        always_run: true
