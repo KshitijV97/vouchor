@@ -1,496 +1,249 @@
-# Autonomous Tiered Execution Platform (ATEP)
+# Autonomous Tiered Execution Platform (ATEP) — architecture vision
 
-**Functional Architecture, Technical Specification & Claude Code Implementation Blueprint**
+- **Status:** historical vision input, refined
+- **Last reviewed:** 2026-11-09
+- **Owner:** Maintainer (STK-001)
+- **Related:** [ADR-001](../decisions/ADR-001-adopt-craftrail-and-atep-blueprint-with-amendments.md), [functional requirements](../requirements/functional-requirements.md), [business rules](../requirements/business-rules.md), [architecture overview](../architecture/overview.md)
 
-## Part 1: Executive & Functional Specification
+!!! note "How to read this page"
+    This page describes **what** ATEP must guarantee and **why**. It does not choose languages, frameworks, databases, schemas or file layouts; those choices live in the [ADRs](../decisions/README.md) and may change without changing this vision.
 
-### 1.1 Architectural Philosophy
+    Where this page and an ADR disagree, the ADR wins. Each invariant below ends with a **critical review** of where the original idea is weak or overstated. Those critiques are open questions for the owner. They do not change any requirement until a requirement or ADR is updated.
 
-Most agentic frameworks fail in production because they treat LLM tool-calling as a stateless, best-effort `while` loop. They trust stale search engine snippets, acsk for human permission either too late or too frequently, treat HTTP `200 OK` or DOM click events as proof of completion, and pollute vector databases with noisy execution logs.
+    The original, technology-specific blueprint (with SQL DDL, Python models, a fixed repository layout and coding-agent prompts) is kept in Git history at commit `ac5b91d` (`docs/project/vision/atep-blueprint.md`). ADR-001's amendment table quotes that version.
 
-The **Autonomous Tiered Execution Platform (ATEP)** is a self-hosted, open-source, durable execution engine built around **six operational invariants**:
+## 1. Problem
 
-1. **Cascading Deterministic Routing (Rule 3):** Tasks are routed through a strict Chain of Responsibility ordered by determinism and verifiability:
+Most agent frameworks run tool calls as a best-effort loop: the model decides, a tool fires, and the loop continues. In production this produces four recurring failures:
 
-   * **Tier 1 (Direct Connectors):** Typed REST/GraphQL/SMTP/IMAP integrations.
+1. **Acting on stale or wrong facts.** Search snippets, cached pages and model recall are treated as current truth.
+2. **Badly timed human involvement.** The user is asked either for every trivial step or not at all before something irreversible happens.
+3. **Confusing "called" with "done".** A successful response, a `200 OK` or a click event is reported as proof that the outcome happened in the world.
+4. **Memory that degrades over time.** Execution chatter, drafts and retries are written into long-term memory and later recalled as if they were facts.
 
-   * **Tier 2 (Deterministic Skills):** Multi-step domain playbooks (pre-defined DAGs).
+ATEP is a durable execution engine designed around these failures. It aims to turn a natural-language request into a batch of actions that are **verified before preparation, approved before execution, and proven after execution**.
 
-   * **Tier 3 (Live Browser Automation):** Stateful Playwright DOM interaction using accessibility trees.
+## 2. Scope and non-goals
 
-   * **Tier 4 (Local Sandbox):** Isolated container execution for file generation, data processing, and custom scripting.
+**In scope:** batches of outward-facing tasks for a single user: finding and verifying contacts, sending messages, creating calendar entries and notes, filling web forms, and producing local files when direct action is impossible.
 
-   * *Invariant:* A failure at Tier $N$ logs the structured error and automatically falls back to Tier $N+1$ before surfacing an inability to execute.
+**Out of scope for this vision:**
 
-2. **Ground-Truth Verification Before Action (Rule 4):** Search results (SearXNG) are treated strictly as **untrusted discovery pointers**. Every critical entity attribute (e.g., store email address, stock status, part number, account existence) must be verified by fetching the live source (via API or headless DOM inspection) and capturing a freshness timestamp and raw source proof before moving to preparation.
+- Payments, purchases, trades and fund transfers (`BR-005`).
+- Open-ended conversational assistance with no external effect.
+- Hosted multi-tenant service operation. The engine is self-hosted (`CON-001`); multi-user authentication is a later concern (`FR-026`).
+- Guaranteeing outcomes on systems that offer no way to observe them (see §6, invariant 5).
 
-3. **Upfront Batch Preparation (Rule 5):** Read-only discovery, verification, and artifact drafting run to completion autonomously across all targets in a batch (e.g., drafting inquiries for 7 vendors) before requesting human intervention.
+## 3. Core concepts
 
-4. **Consequence-Gated Human-in-the-Loop (Rule 6):** Tools are strictly classified as `READ_ONLY` or `CONSEQUENTIAL`. Any action that mutates external state, acts in the user's name, or incurs financial/reputational cost triggers a hard state checkpoint (`INTERRUPT`), presenting the complete batch of prepared drafts and verified target metadata for a single human approval decision.
+These are logical concepts. How they are stored is an implementation decision.
 
-5. **Idempotent Execution & Read-Back Verification (Rule 7):** Execution is decoupled from completion. Every consequential action is assigned a deterministic idempotency key and requires an out-of-band **Read-Back Verification Hook** (e.g., querying the IMAP `Sent` folder or re-scraping the target page state). If an action fails or times out mid-flight, the retry handler **executes the Read-Back Hook first** to reconcile partial successes and guarantee zero duplicate side effects.
+| Concept | Meaning | Key properties |
+|---|---|---|
+| **Request / thread** | One user intent and everything done to satisfy it | Durable identity; survives restarts; can wait for days |
+| **Capability** | A named outcome the system can produce, such as `send_message` or `create_event` | Consequence class; whether it needs verified inputs; one or more tier handlers; a read-back method for every handler that changes external state |
+| **Tier handler** | One way to carry out a capability, at a given tier | Health/availability; error taxonomy (retriable vs terminal) |
+| **Discovery pointer** | A candidate fact from search or recall | Always untrusted; never usable as an input to an action |
+| **Verified attribute** | A fact about an entity, confirmed against a live source | Entity, attribute, value, source, method, raw evidence, observed-at time, freshness window |
+| **Staged action** | A fully prepared, not-yet-executed action | Exact payload; target; verified inputs it depends on; human-readable summary; idempotency key |
+| **Ledger entry** | The authoritative record of a staged action's lifecycle | Status, attempt history, tier route history, read-back proof, errors |
+| **Durable fact** | Knowledge worth remembering across threads | Category (preference, decision rule, verified entity fact), provenance, confidence, expiry |
+| **Report** | The user-facing summary when a thread ends | Derived only from ledger entries, never from model narration |
 
-6. **Plain Reporting & Selective Memory Distillation (Rule 8):** Upon workflow termination, the system emits a concise execution report derived from an immutable relational audit ledger. A background distillation pipeline extracts *only* durable facts (user preferences, permanent decisions, verified entity attributes) into long-term vector/relational storage, discarding transient DOM states, drafts, and retry logs.
+### Idempotency key
 
-### 1.2 Self-Hosted Open-Source Stack
+Every staged action has a deterministic key computed from the thread identity, the capability, the target and the **canonical serialization** of the frozen payload. Two requirements make this language-agnostic and stable:
 
-All components run locally or on self-hosted infrastructure via Docker Compose with zero paid SaaS dependencies:
+- The serialization must be a published canonical form (for example RFC 8785 JSON Canonicalization), not "whatever the runtime's JSON encoder does".
+- The payload must be frozen at staging. A model must never regenerate a draft during retry, or the key changes and duplicate protection is lost.
 
-| Subsystem | Technology | Role in Architecture |
-| ----- | ----- | ----- |
-| **Core Orchestrator** | **Python 3.12 + FastAPI + LangGraph** | Durable cyclic state machine with native `PostgresSaver` checkpointing and `interrupt` support. |
-| **Tool Protocol** | **FastMCP (Model Context Protocol)** | Decouples Tier 1–4 execution capabilities into standardized, hot-swappable tool servers. |
-| **Primary Persistence** | **PostgreSQL 16 + `pgvector`** | Stores LangGraph state checkpoints, the `execution_ledger` idempotency table, relational audit logs, and semantic memory embeddings. |
-| **Coordination & Pub/Sub** | **Redis 7** | Distributed idempotency locks, rate-limit counters, and real-time Server-Sent Events (SSE) / WebSocket streaming to the client. |
-| **Discovery & Browser** | **SearXNG + Playwright + Crawl4AI** | SearXNG provides zero-cost metasearch discovery; Playwright/Crawl4AI performs live DOM verification (Rule 4) and Tier 3 GUI automation. |
-| **Local Sandbox (Tier 4)** | **Docker-in-Docker / Rootless Worker** | Ephemeral Python/Bash workspace with a mounted `/workspace/artifacts` volume for local file generation. |
-| **LLM Inference Router** | **LiteLLM / Ollama** | Unified local gateway supporting self-hosted models (Qwen-2.5-Coder, Llama-3.3) or pluggable API endpoints. |
-| **Local Email Test Sink** | **Mailpit** | Local SMTP/IMAP server included in the dev stack to deterministically test email sending, network faults, and `Sent` folder read-back verification. |
+## 4. Execution tiers
 
-## Part 2: Technical Architecture & Data Contracts
+Capabilities are carried out through four kinds of handler, ordered from most to least predictable:
 
-### 2.1 System Topology & State Machine Flow
+| Tier | Kind | Typical example | Observability of outcome |
+|---|---|---|---|
+| 1 | **Direct connector:** a typed protocol or API integration | Mail submission, calendar API | Usually strong (IDs, queries) |
+| 2 | **Deterministic skill:** a predefined multi-step playbook | "Contact N vendors" built from tier-1 calls | Inherits from its steps |
+| 3 | **Live browser automation:** a real browser driven through the accessibility tree | Web contact form | Often weak (confirmation page only) |
+| 4 | **Isolated sandbox:** generated code in a locked-down environment | Build a `.csv`, `.eml` or `.ics` file | Strong for the artifact; **no external effect** |
 
-```
-                      ┌────────────────────────────────────┐
-                      │   FastAPI Gateway (REST / SSE)     │
-                      └─────────────────┬──────────────────┘
-                                        │
-                                        ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                     LangGraph Durable State Machine                        │
-│                                                                            │
-│  ┌──────────────────────┐     Untrusted URLs    ┌───────────────────────┐  │
-│  │ 1. Discovery &       │ ────────────────────► │ 2. Ground-Truth       │  │
-│  │    Capability Router │                       │    Verifier (Rule 4)  │  │
-│  └──────────▲───────────┘                       └───────────┬───────────┘  │
-│             │                                               │              │
-│     Tier N+1 Fallback                               Verified Entities      │
-│             │                                               ▼              │
-│  ┌──────────┴───────────┐                       ┌───────────────────────┐  │
-│  │ 5. Idempotent        │                       │ 3. Batch Preparation  │  │
-│  │    Executor (Rule 7) │                       │    & Staging (Rule 5) │  │
-│  └──────────▲───────────┘                       └───────────┬───────────┘  │
-│             │                                               │              │
-│       Approved Batch                                  Staged Payloads      │
-│             │                                               ▼              │
-│  ┌──────────┴───────────┐                       ┌───────────────────────┐  │
-│  │ 4. Consequence Gate  │ ◄──────────────────── │   Check Consequence   │  │
-│  │    (HITL Interrupt)  │    If CONSEQUENTIAL   │       Metadata        │  │
-│  └──────────────────────┘                       └───────────────────────┘  │
-│             │                                                              │
-│             ▼ (Post-Verification)                                          │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ 6. Plain Reporter & Selective Memory Distiller (Rule 8)              │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────────┘
-         │                          │                           │
-         ▼                          ▼                           ▼
-┌─────────────────┐      ┌─────────────────────┐     ┌─────────────────────┐
-│  PostgreSQL 16  │      │   FastMCP Servers   │     │   Redis 7 Event     │
-│ + pgvector      │      │ Tiers 1, 2, 3, & 4  │     │   Bus & Locks       │
-└─────────────────┘      └─────────────────────┘     └─────────────────────┘
+## 5. System flow
 
+```mermaid
+flowchart TD
+    U[User request] --> D[1. Discovery<br/>untrusted pointers + recalled memory]
+    D --> V[2. Ground-truth verification<br/>live sources, evidence, freshness]
+    V --> S[3. Batch preparation<br/>frozen drafts + idempotency keys]
+    S --> C{Any consequential<br/>action in batch?}
+    C -- no --> E
+    C -- yes --> G[4. Consequence gate<br/>one durable pause for the whole batch]
+    G -- approve / edit / reject per action --> E[5. Idempotent executor<br/>claim, act, read back]
+    E -- retriable failure --> R[Router: next eligible tier]
+    R --> E
+    E --> P[6. Report from ledger]
+    P --> M[Selective memory distillation]
+    M -.-> D
 ```
 
-### 2.2 PostgreSQL Schema Definitions (`init.sql`)
-
-Beyond LangGraph's internal checkpoint tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`), the platform enforces state integrity through three dedicated tables:
-
-```
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 1. Ground-Truth Verification Cache (Rule 4)
-CREATE TABLE verified_sources (
-    verification_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    thread_id TEXT NOT NULL,
-    entity_name TEXT NOT NULL,
-    attribute_key TEXT NOT NULL,          -- e.g., 'contact_email', 'battery_stock_status'
-    attribute_value TEXT NOT NULL,        -- e.g., 'parts@canadacomputers.com'
-    source_uri TEXT NOT NULL,             -- Live URL or API endpoint
-    verification_method TEXT NOT NULL,    -- 'LIVE_DOM_SCRAPE' | 'DIRECT_API'
-    raw_evidence_snippet TEXT NOT NULL,   -- Exact DOM text or JSON fragment proving the fact
-    verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 2. Idempotent Execution Ledger (Rules 6, 7, 8)
-CREATE TYPE execution_status AS ENUM (
-    'STAGED',                 -- Drafted and awaiting human approval
-    'APPROVED',               -- Approved by user, queued for execution
-    'ATTEMPTED_UNVERIFIED',   -- Mutation fired, awaiting read-back confirmation
-    'VERIFIED_SUCCESS',       -- Read-back hook confirmed external state change
-    'PARTIAL_RECOVERED',      -- Failed mid-flight, but pre-retry read-back confirmed success
-    'FAILED_TERMINAL',        -- All tiers and retries exhausted
-    'REJECTED_BY_USER'        -- User declined action at HITL gate
-);
-
-CREATE TABLE execution_ledger (
-    idempotency_key TEXT PRIMARY KEY,     -- sha256(thread_id + capability + target + payload_hash)
-    thread_id TEXT NOT NULL,
-    capability_name TEXT NOT NULL,        -- e.g., 'vendor_outreach'
-    selected_tier SMALLINT NOT NULL,      -- 1: Connector, 2: Skill, 3: Browser, 4: Sandbox
-    target_identifier TEXT NOT NULL,      -- e.g., 'parts@canadacomputers.com'
-    staged_payload JSONB NOT NULL,        -- Exact parameters approved by the user
-    status execution_status NOT NULL DEFAULT 'STAGED',
-    attempt_count INT NOT NULL DEFAULT 0,
-    route_history JSONB NOT NULL DEFAULT '[]'::jsonb, -- Array of failed tier attempts & reasons
-    readback_proof JSONB,                 -- e.g., {"imap_message_id": "<...>", "folder": "Sent"}
-    last_error TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_ledger_thread ON execution_ledger(thread_id);
-
--- 3. Selective Durable Memory Store (Rule 8)
-CREATE TYPE memory_category AS ENUM (
-    'USER_PREFERENCE',
-    'DECISION_RULE',
-    'VERIFIED_ENTITY_FACT'
-);
-
-CREATE TABLE durable_memories (
-    memory_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    category memory_category NOT NULL,
-    subject_entity TEXT NOT NULL,         -- e.g., 'Canada Computers', 'User'
-    fact_statement TEXT NOT NULL,         -- Concise, self-contained factual statement
-    structured_metadata JSONB DEFAULT '{}'::jsonb,
-    embedding vector(768),                -- Sized for nomic-embed-text (Ollama)
-    source_thread_id TEXT NOT NULL,
-    confidence_score FLOAT NOT NULL DEFAULT 1.0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(category, subject_entity, fact_statement)
-);
-
-CREATE INDEX idx_memory_embedding ON durable_memories USING hnsw (embedding vector_cosine_ops);
-
-```
-
-### 2.3 Core Python Data Contracts (`src/core/contracts.py`)
-
-All state transitions inside LangGraph must validate against strict Pydantic v2 models:
-
-```
-from datetime import datetime
-from enum import Enum, IntEnum
-from typing import Any, Annotated
-import operator
-from pydantic import BaseModel, Field, HttpUrl, computed_field
-import hashlib
-import json
-
-class ExecutionTier(IntEnum):
-    TIER_1_CONNECTOR = 1
-    TIER_2_SKILL = 2
-    TIER_3_BROWSER = 3
-    TIER_4_SANDBOX = 4
-
-class ConsequenceLevel(str, Enum):
-    READ_ONLY = "READ_ONLY"
-    CONSEQUENTIAL = "CONSEQUENTIAL"
-
-class ExecutionStatus(str, Enum):
-    STAGED = "STAGED"
-    APPROVED = "APPROVED"
-    ATTEMPTED_UNVERIFIED = "ATTEMPTED_UNVERIFIED"
-    VERIFIED_SUCCESS = "VERIFIED_SUCCESS"
-    PARTIAL_RECOVERED = "PARTIAL_RECOVERED"
-    FAILED_TERMINAL = "FAILED_TERMINAL"
-    REJECTED_BY_USER = "REJECTED_BY_USER"
-
-class VerifiedAttribute(BaseModel):
-    """Enforces Rule 4: Cannot be instantiated from a search snippet alone."""
-    entity_name: str
-    attribute_key: str
-    attribute_value: str
-    source_uri: str
-    verification_method: str = Field(pattern="^(LIVE_DOM_SCRAPE|DIRECT_API)$")
-    raw_evidence_snippet: str = Field(min_length=5)
-    verified_at: datetime
-
-class RouteAttempt(BaseModel):
-    tier: ExecutionTier
-    tool_name: str
-    timestamp: datetime
-    error_type: str
-    error_message: str
-
-class StagedAction(BaseModel):
-    """Enforces Rules 5, 6, and 7."""
-    thread_id: str
-    capability_name: str
-    consequence: ConsequenceLevel
-    current_tier: ExecutionTier
-    target_identifier: str
-    summary_for_user: str
-    payload: dict[str, Any]
-    verified_dependencies: list[VerifiedAttribute] = Field(min_length=1)
-    status: ExecutionStatus = ExecutionStatus.STAGED
-    route_history: list[RouteAttempt] = Field(default_factory=list)
-    readback_proof: dict[str, Any] | None = None
-    last_error: str | None = None
-
-    @computed_field
-    @property
-    def idempotency_key(self) -> str:
-        canonical_payload = json.dumps(self.payload, sort_keys=True)
-        raw = f"{self.thread_id}:{self.capability_name}:{self.target_identifier}:{canonical_payload}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-class DurableFactCandidate(BaseModel):
-    """Enforces Rule 8: Output contract for the Memory Distiller."""
-    category: str = Field(pattern="^(USER_PREFERENCE|DECISION_RULE|VERIFIED_ENTITY_FACT)$")
-    subject_entity: str
-    fact_statement: str
-    confidence_score: float = Field(ge=0.8, le=1.0)
-
-```
-
-### 2.4 Detailed Component Mechanics
-
-#### 1. The Tiered Capability Registry (`src/orchestrator/registry.py`)
-
-Every high-level intent (e.g., `send_message`, `check_inventory`, `publish_post`) maps to a `CapabilityDefinition`. Each capability registers handlers for Tiers 1 through 4, alongside a paired **Read-Back Verifier**:
-
-```
-class TierHandler(BaseModel):
-    tier: ExecutionTier
-    mcp_server: str
-    tool_name: str
-    readback_tool_name: str | None = None  # Required if capability is CONSEQUENTIAL
-
-```
-
-When executing a capability:
-
-1. The router queries the registry for the lowest numerical `ExecutionTier` configured and healthy for that user/service.
-
-2. If execution raises a `RetriableTierError` (e.g., missing OAuth token, HTTP 403/404, DOM selector change), the router appends a `RouteAttempt` to `action.route_history`, increments `action.current_tier` to the next available tier, and retries immediately.
-
-3. If `ExecutionTier.TIER_4_SANDBOX` is reached, the system falls back to generating a local artifact (e.g., a CSV, script, or pre-formatted file) so the user still receives actionable output.
-
-#### 2. Ground-Truth Verification Engine (`src/nodes/verifier.py`)
-
-To satisfy Rule 4:
-
-* Search tools (`searxng_search`) return objects tagged with `untrusted_snippet=True`.
-
-* The `StagingNode` is programmed to reject any `StagedAction` whose `verified_dependencies` list is empty or contains unverified snippets.
-
-* The `VerifierNode` takes candidate URLs or entities from discovery and dispatches **Crawl4AI / Playwright** (or a Tier 1 read API) to inspect the live page. It extracts the target attribute (such as an email address matching a regex or a specific battery SKU on the page) and records the exact surrounding DOM text into `raw_evidence_snippet`.
-
-#### 3. Idempotent Executor & Pre-Retry Read-Back (`src/nodes/executor.py`)
-
-The execution loop for each approved `StagedAction` follows a strict 5-step state machine:
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│ 1. Query `execution_ledger` by `action.idempotency_key`           │
-└───────────────┬───────────────────────────────────────────────────┘
-                │
-                ├──► Status == VERIFIED_SUCCESS or PARTIAL_RECOVERED?
-                │         └──► Return cached proof immediately (No-Op).
-                │
-                ├──► Status == ATTEMPTED_UNVERIFIED? (Previous crash/timeout)
-                │         └──► Run `readback_tool` FIRST!
-                │               ├──► Proof found? -> Mark PARTIAL_RECOVERED & Return.
-                │               └──► Proof absent? -> Proceed to Step 2 (Safe to retry).
-                │
-                ▼
-┌───────────────────────────────────────────────────────────────────┐
-│ 2. Set Ledger Status = ATTEMPTED_UNVERIFIED (Commit to Postgres)  │
-└───────────────┬───────────────────────────────────────────────────┘
-                │
-                ▼
-┌───────────────────────────────────────────────────────────────────┐
-│ 3. Invoke Primary Tool via FastMCP (`action.current_tier`)        │
-└───────────────┬───────────────────────────────────────────────────┘
-                │
-                ├──► Tool threw exception?
-                │         └──► Run `readback_tool` (Check if side-effect occurred anyway)
-                │               ├──► Proof found? -> Mark PARTIAL_RECOVERED.
-                │               └──► Proof absent? -> Fallback to next Tier or Retry.
-                │
-                ▼
-┌───────────────────────────────────────────────────────────────────┐
-│ 4. Poll `readback_tool` with Exponential Backoff ($2^0, 2^1, 2^2$s) │
-└───────────────┬───────────────────────────────────────────────────┘
-                │
-                ├──► Proof verified -> Set Status = VERIFIED_SUCCESS + Save Proof.
-                └──► Poll exhausted -> Raise VerificationTimeoutError.
-
-```
-
-## Part 3: Claude Code Scaffolding & Iteration Blueprint
-
-> **Usage Instructions:** Save this file as `CLAUDE.md` (or `AGENTIC_PLATFORM_SPEC.md`) in the root of an empty repository. Open `claude` in your terminal and instruct it:
-> *"Read `AGENTIC_PLATFORM_SPEC.md` and execute Phase 1. Do not proceed to Phase 2 until all Phase 1 verification gates pass."*
-
-### 3.1 Target Repository Structure
+Logical components and their single responsibilities:
 
-Claude Code must scaffold and maintain this exact directory layout:
+| Component | Responsibility |
+|---|---|
+| Gateway | Accept requests, expose thread state and approvals, stream progress |
+| Orchestrator | Run the flow as a durable, resumable state machine with checkpoints |
+| Capability registry and router | Map capabilities to tier handlers; pick the first eligible handler; enforce declaration rules at load time |
+| Verifier | Turn discovery pointers into verified attributes, or reject them |
+| Stager | Produce frozen drafts and staged actions for every target before any approval |
+| Consequence gate | Pause once per batch when needed; apply per-action decisions |
+| Executor | Run each approved action exactly as approved, with claim, fencing and read-back |
+| Reporter | Summarize outcomes from ledger entries only |
+| Distiller | Extract durable facts; discard execution noise |
+| Tool servers | Host tier handlers behind a standard tool protocol (for example MCP) so they can be replaced independently |
 
-```
-atep-platform/
-├── CLAUDE.md                        # This architectural specification
-├── docker-compose.yml               # Postgres (pgvector), Redis, SearXNG, Mailpit
-├── pyproject.toml                   # Poetry / uv dependency management (Python 3.12+)
-├── .env.example                     # Environment variables template
-├── migrations/
-│   └── 001_init_schema.sql          # DDL for verified_sources, execution_ledger, durable_memories
-├── src/
-│   ├── __init__.py
-│   ├── config.py                    # Pydantic Settings
-│   ├── main.py                      # FastAPI application entrypoint & SSE endpoints
-│   ├── core/
-│   │   ├── contracts.py             # Pydantic v2 models & enums
-│   │   ├── db.py                    # AsyncPG pool & ledger repository methods
-│   │   └── llm.py                   # LiteLLM / Ollama client wrapper
-│   ├── orchestrator/
-│   │   ├── state.py                 # LangGraph AgentState TypedDict
-│   │   ├── registry.py              # Tiered Capability Registry (Tiers 1-4)
-│   │   └── graph.py                 # StateGraph definition, edges, PostgresSaver, interrupts
-│   ├── nodes/
-│   │   ├── discovery.py             # Node 1: Intent parsing & untrusted discovery
-│   │   ├── verifier.py              # Node 2: Rule 4 live DOM/API ground-truth verifier
-│   │   ├── staging.py               # Node 3: Rule 5 upfront batch preparation
-│   │   ├── gate.py                  # Node 4: Rule 6 consequence evaluation & HITL interrupt
-│   │   ├── executor.py              # Node 5: Rule 7 idempotent execution + read-back + tier fallback
-│   │   └── reporter_memory.py       # Node 6: Rule 8 plain reporting & durable memory distillation
-│   └── mcp_servers/
-│       ├── tier1_connectors.py      # FastMCP: Direct SMTP/IMAP (Mailpit/Gmail) & REST connectors
-│       ├── tier2_skills.py          # FastMCP: Deterministic multi-step playbooks
-│       ├── tier3_browser.py         # FastMCP: Playwright live DOM scraper & form automation
-│       └── tier4_sandbox.py         # FastMCP: Local workspace file/spreadsheet generator
-└── tests/
-    ├── conftest.py
-    ├── test_phase1_hitl_graph.py
-    ├── test_phase2_idempotency_readback.py
-    ├── test_phase3_verifier_fallback.py
-    └── test_phase4_memory_distillation.py
+## 6. The six invariants
 
-```
+The original blueprint numbered these "Rule 3" to "Rule 8", which shows they were lifted out of a longer list whose first two rules were never written down. They are renumbered 1–6 here, matching the requirements.
 
-### 3.2 Strict Engineering Rules for Claude Code
+### Invariant 1 — Cascading tiered routing
 
-1. **Tooling & Environment:** Use `uv` (or `poetry`) for Python dependency management. Target Python 3.12+.
+**Statement.** A capability is attempted on the most predictable eligible tier first. A retriable failure is recorded and the next eligible tier is tried before the system reports that it cannot do the task.
 
-2. **Strict Typing:** All functions and methods must have full type annotations. Run `mypy --strict src/` at the end of every phase.
+**Why.** Typed integrations fail loudly and can be verified. Browsers and generated code are more capable but less predictable. Trying the predictable path first reduces both risk and cost.
 
-3. **Async Native:** Use `asyncio`, `httpx.AsyncClient`, `psycopg` (v3 async) for `langgraph-checkpoint-postgres`, and `asyncpg` for ledger queries. Never use blocking `requests` or `time.sleep` inside async nodes.
+**Critical review.**
 
-4. **Zero Paid API Lock-in:** Default all LLM calls to a local Ollama endpoint (`http://localhost:11434`) or configurable OpenAI-compatible base URL via `pydantic-settings`. Provide deterministic mock LLM responses in `pytest` fixtures so all architectural tests run offline in milliseconds.
+- **Falling back can change what the user approved.** Approving "send via the mail API" is not the same as approving "type it into a web form as you". A tier change after approval changes the channel, the visible sender and the read-back strength. *Open question:* should approval name the allowed tiers, or should a post-approval tier change go back to the gate?
+- **Not every error should cause a fallback.** The original lists HTTP 403 as a reason to fall back. A 403 usually means "you are not permitted". Getting around it with a browser circumvents authorization, which is a security and terms-of-service problem rather than a resilience feature. The error taxonomy must separate *unavailable* (fall back), *forbidden* (stop) and *invalid input* (stop and report).
+- **Tier 2 is a composition, not an alternative.** A skill made of tier-1 calls cannot sensibly be the fallback for those same calls. Tiers describe handler kinds; fallback order should be declared per capability, not assumed from the tier number.
+- **Tier 4 is not execution.** Producing a draft file when sending failed is useful, but the outcome is "not done, here is what you need". It must never be counted as success (`FR-004`, `BR-003`).
+- **Browser automation of third-party sites** raises rate-limit, bot-detection and terms-of-service issues that a fallback rule does not address.
 
-5. **No Silent Exceptions:** Every tier failure must be caught, structured into a `RouteAttempt` model, and persisted to `execution_ledger.route_history`.
+### Invariant 2 — Ground-truth verification before action
 
-### 3.3 Phased Implementation Runbook (Prompts for Claude Code)
+**Statement.** Search results and recalled facts are untrusted discovery pointers. Every attribute an action depends on must be confirmed from a live source and stored with its source, method, raw evidence and observation time before preparation.
 
-#### Phase 1: Infrastructure, Database & Durable HITL State Graph
+**Why.** Snippets and caches go stale. Acting on them sends messages to dead addresses and wrong vendors.
 
-**Objective:** Stand up the Docker infrastructure, apply database migrations, implement the Pydantic contracts, and prove that the LangGraph state machine can stage a batch of actions, suspend execution to PostgreSQL on a consequential action, and resume upon user approval.
+**Critical review.**
 
-* **Tasks for Claude Code:**
+- **"Live" does not mean "true".** A live page can be spoofed, compromised, SEO spam or a reseller pretending to be the vendor. Verification proves provenance and freshness, not correctness. Source authority (an official domain or an authenticated API) should be part of what counts as verified.
+- **Live pages are a prompt-injection channel.** Text taken from a page goes into drafts and into the model's context. Evidence must be handled as data, and extracted values validated against the attribute's expected shape, before a model sees them.
+- **Evidence-length checks are theatre.** A minimum snippet length (the original used five characters) proves nothing. What matters is that the evidence contains the value and can be traced to the source.
+- **Freshness was missing from the original.** It recorded a timestamp but no expiry. Attributes need a per-type freshness window, and that window must be checked again **at execution time**, because approval can come days after verification (`FR-008`).
+- **Not every action has something to verify.** A note to yourself or a local artifact depends on no external entity. Requiring at least one verified input everywhere forces fake verification (ADR-001 A7).
 
-  1. Create `docker-compose.yml` with:
+### Invariant 3 — Upfront batch preparation
 
-     * `pgvector/pgvector:pg16` (Port 5432, auto-mounting `./migrations/001_init_schema.sql` into `/docker-entrypoint-initdb.d/`).
+**Statement.** Read-only discovery, verification and drafting finish for every target in a batch before the human is asked anything.
 
-     * `redis:7-alpine` (Port 6379).
+**Why.** One informed decision over a complete batch beats a trickle of interruptions.
 
-     * `axllent/mailpit:latest` (SMTP on 1025, HTTP UI/API on 8025, IMAP enabled) for local email testing.
+**Critical review.**
 
-     * `searxng/searxng:latest` (Port 8080, configured with JSON format enabled).
+- **Batching invites rubber-stamping.** Seven drafts on one screen get less scrutiny than one. The gate UI must make differences between drafts and risky items obvious, and approval must stay per action (`FR-011`).
+- **Some batches cannot be fully prepared upfront**, for example when a later step depends on an earlier reply. The vision should allow multi-stage batches, each with its own gate, rather than pretend everything is known at the start.
+- **Preparation costs money and time.** Verifying fifty targets before the user can say "only the first three" wastes work. A cheap preview step before full verification may be worth adding.
 
-  2. Create `pyproject.toml` with dependencies: `fastapi`, `uvicorn`, `langgraph`, `langgraph-checkpoint-postgres`, `psycopg[binary,pool]`, `asyncpg`, `pydantic>=2.7`, `pydantic-settings`, `httpx`, `redis`, `fastmcp`, `playwright`, `pytest`, `pytest-asyncio`, `mypy`.
+### Invariant 4 — Consequence-gated human approval
 
-  3. Implement `src/core/contracts.py` and `src/orchestrator/state.py`.
+**Statement.** Every capability is classified as read-only or consequential. If a batch contains any consequential action, the flow pauses durably at a single gate that shows every draft with its verified inputs. Nothing consequential runs without explicit approval, and it runs with exactly the approved payload (`BR-001`, `BR-002`).
 
-  4. Implement `src/orchestrator/graph.py` with `AsyncPostgresSaver` and `interrupt_before=["executor"]` when `StagedAction.consequence == ConsequenceLevel.CONSEQUENTIAL`.
+**Why.** It puts the human at the one point where their judgment matters, and only there.
 
-  5. Expose FastAPI endpoints in `src/main.py`:
+**Critical review.**
 
-     * `POST /threads` (starts a task, runs Discovery -> Verifier -> Staging, and returns the staged batch if interrupted at the Consequence Gate).
+- **Two classes are too coarse.** Reversible vs irreversible, private vs public, cost and audience size all matter. A note to yourself and an email to a customer are both "consequential" but carry very different risk. *Open question:* add a severity or reversibility dimension that can drive UI emphasis or auto-approval policies later.
+- **Consequence depends on parameters, not only on the capability.** "Create event" with only the user as attendee is harmless; with external attendees it sends invitations. Classification may need to be evaluated per staged action.
+- **"Read-only" has side effects too.** Opening a page can trigger tracking, unsubscribe links or "mark as read". Sending private data to a remote model endpoint is a disclosure (`BR-006`). Browser navigation and remote inference should be treated with that in mind.
+- **Approval goes stale.** An approval given days later against expired verification should require re-verification and, if values changed, re-approval.
 
-     * `POST /threads/{thread_id}/approve` (accepts approved/modified `StagedAction` payloads and resumes graph execution).
+### Invariant 5 — Idempotent execution and read-back verification
 
-* **Phase 1 Verification Gate:**
+**Statement.** Executing is not completing. Every consequential action has a deterministic idempotency key and an out-of-band read-back method. On any uncertain outcome (crash, timeout, error) the executor runs read-back **before** retrying, so a side effect that already happened is recorded and not repeated.
 
-  * Run `docker compose up -d` and verify Postgres, Redis, and Mailpit are healthy.
+**Why.** Networks fail after the remote side has accepted a request. Without read-back, the safe-looking retry is the one that sends the duplicate.
 
-  * Run `pytest tests/test_phase1_hitl_graph.py` which creates a thread with 7 staged vendor outreach tasks, asserts the graph pauses at the `gate` node, inspects Postgres to confirm `execution_ledger` shows 7 rows in `STAGED` status, invokes the resume command, and asserts completion.
+**Critical review.**
 
-#### Phase 2: Idempotent Executor, Pre-Retry Read-Back & Cascading Fallbacks
+- **"Zero duplicate side effects" is overstated.** Exactly-once effects on a system you do not control are impossible in general. ATEP can offer *at-most-once with reconciliation* where the target supports a unique marker or a client-chosen ID (ADR-007), and *best effort* elsewhere. The claim should be scoped per capability.
+- **Absence is not proof.** Many systems are eventually consistent, so an immediate "not found" can be wrong. Read-back needs a grace window before absence counts (ADR-001 A3).
+- **There must be an "unknown" outcome.** When read-back is impossible or keeps failing, the honest state is "outcome unknown, human must check". The original state machine has no such state, so it forces either a false success or a risky retry.
+- **Matching must be exact.** Read-back by "same recipient and subject" matches the wrong message. Stamp a marker derived from the idempotency key into the side effect wherever the target allows (ADR-007).
+- **Weak read-back on tier 3.** Re-scraping a page after submitting a form usually proves nothing. Browser-tier capabilities should declare their read-back strength, and the report should state it.
+- **Concurrency.** Two workers must never run the same key at once. The claim must sit in the same transactional store as the ledger, with fencing, not in a separate lock service whose locks can expire mid-call (ADR-004).
+- **The status names are misleading.** "Partial recovered" means "succeeded, confirmed only on reconciliation", which is neither partial nor a recovery. Clearer names would help reports.
 
-**Objective:** Implement Rules 3 and 7. Build the Tier 1 Email Connector against Mailpit, implement the Read-Back Verification Hook, and prove that a simulated mid-flight network timeout does not result in duplicate emails on retry.
+### Invariant 6 — Plain reporting and selective memory
 
-* **Tasks for Claude Code:**
+**Statement.** When a thread ends, the report is derived from the ledger, not from model narration. A separate step keeps only durable facts (preferences, decision rules, verified entity facts) and discards drafts, page state and retry logs (`BR-004`).
 
-  1. Implement `src/mcp_servers/tier1_connectors.py` with two tools:
+**Why.** Users need an honest account. Memory polluted with execution noise makes later threads worse.
 
-     * `send_smtp_email(recipient, subject, body)`: Sends email via `aiosmtplib` to Mailpit (Port 1025).
+**Critical review.**
 
-     * `verify_email_sent(recipient, subject)`: Queries Mailpit's REST/IMAP inspection API (`http://localhost:8025/api/v1/messages`) to verify the exact recipient and subject exist in the sent messages store, returning the message ID and timestamp as `readback_proof`.
-
-  2. Implement `src/nodes/executor.py` with the 5-step idempotency state machine:
-
-     * Check `execution_ledger` by `idempotency_key`.
-
-     * If `ATTEMPTED_UNVERIFIED`, run `verify_email_sent` **before** re-sending. If found, transition to `PARTIAL_RECOVERED`.
-
-     * Implement the Tier fallback loop: if Tier 1 raises `ConnectionRefusedError` or `TierUnavailableError`, log the `RouteAttempt` and automatically fall back to Tier 2, Tier 3, or Tier 4 (`src/mcp_servers/tier4_sandbox.py` which writes ready-to-send `.eml` draft files to `/workspace/artifacts`).
-
-* **Phase 2 Verification Gate:**
-
-  * Run `pytest tests/test_phase2_idempotency_readback.py` covering three scenarios:
-
-    1. **Batch Execution:** 7 vendor emails sent and verified via read-back hook (`VERIFIED_SUCCESS`).
-
-    2. **Partial Failure Recovery (The "Canada Computers Retry" Test):** Inject a fault that raises a `TimeoutError` *after* the SMTP message is accepted by Mailpit on vendor #4, leaving the ledger in `ATTEMPTED_UNVERIFIED`. Trigger a retry run and assert that `executor.py` detects the message in Mailpit via the read-back hook, updates status to `PARTIAL_RECOVERED`, and confirms Mailpit contains **1 copy** of the email (not 2).
-
-    3. **Cascading Fallback:** Disable Tier 1 connector for vendor #5 and assert the executor automatically falls back to the next configured tier and records the failure reason in `route_history`.
-
-#### Phase 3: Ground-Truth Verifier & Live Browser Automation
-
-**Objective:** Implement Rule 4 (Anti-Snippet Verification) and Tier 3 (Playwright Headless Browser execution).
-
-* **Tasks for Claude Code:**
-
-  1. Implement `src/mcp_servers/tier3_browser.py` using `playwright.async_api`:
-
-     * `verify_live_page_fact(url, target_attribute, regex_or_selector)`: Navigates to the live URL, waits for DOM settle, extracts the accessibility tree / visible text, verifies the fact exists on the live page, and returns a populated `VerifiedAttribute` object.
-
-     * `execute_browser_form(url, form_actions)`: Serializes interactive DOM elements (`button`, `input`, `textarea`) with numerical indices, executes form fills/clicks, and captures post-submission DOM state for read-back verification.
-
-  2. Implement `src/nodes/verifier.py`:
-
-     * Takes candidate URLs from `discovery.py` (SearXNG).
-
-     * Rejects stale snippets if live page verification fails (e.g., if a search snippet claims a store email is `sales@example.com`, but the live contact page shows `parts@example.com`, the verifier overwrites the attribute with the live DOM value and logs the discrepancy).
-
-* **Phase 3 Verification Gate:**
-
-  * Run `pytest tests/test_phase3_verifier_fallback.py` which spins up a lightweight local FastAPI mock vendor storefront with a live DOM contact page and web contact form, verifies live attribute extraction overrides stale search snippet data, and executes a Tier 3 Playwright form submission with DOM read-back confirmation.
-
-#### Phase 4: Plain Reporter & Selective Memory Distiller
-
-**Objective:** Implement Rule 8. Generate clean human-readable execution summaries and distill *only* durable facts into `pgvector`, keeping routine execution chatter out of memory.
-
-* **Tasks for Claude Code:**
-
-  1. Implement `src/nodes/reporter_memory.py`:
-
-     * **Reporter:** Reads all rows for `thread_id` from `execution_ledger` and formats a structured plain-English report (e.g., *"6/7 emails sent and verified via Tier 1. 1/7 (Canada Computers) recovered after timeout via Sent-folder read-back check. 0 duplicates."*).
-
-     * **Selective Memory Distiller:** Passes the initial user request, verified attributes, and user approval modifications through a strict distillation prompt returning `list[DurableFactCandidate]`.
-
-     * **Noise Filter Guardrail:** Explicitly reject any candidate fact containing transient execution verbs (`"clicked"`, `"retried"`, `"timed out"`, `"drafted"`, `"status"`).
-
-     * **Upsert & Deduplicate:** Compute embeddings via Ollama (`nomic-embed-text`) or a deterministic local embedding model, check cosine similarity in `durable_memories` (threshold $> 0.92$), and upsert into PostgreSQL.
-
-  2. Update `src/nodes/discovery.py` to query top-$K$ ($K=5$) relevant `durable_memories` at the start of every new thread so previously verified vendor emails and user preferences are loaded immediately without re-asking the user.
-
-* **Phase 4 Verification Gate:**
-
-  * Run `pytest tests/test_phase4_memory_distillation.py` to confirm that after a 7-store outreach run, `durable_memories` stores the verified store contact emails and user formatting preferences, stores **zero** routine execution steps, and automatically pre-populates those verified facts on a subsequent thread.
+- **The "immutable audit ledger" was mutable.** The original described an immutable ledger but updated rows in place. Real auditability needs an append-only event history, with the current status derived from it or maintained alongside it.
+- **Report claims must match what was measured.** "0 duplicates" can only honestly be "0 duplicates detected" when read-back is best effort.
+- **Remembered entity facts become discovery pointers again.** A vendor email remembered last month is exactly the stale fact invariant 2 forbids acting on. Recalled facts must carry provenance and expiry, and must be re-verified before use.
+- **Keyword noise filters are brittle.** Rejecting candidates that contain words like "clicked" or "retried" misses paraphrases and blocks legitimate facts. Model-assigned confidence scores are uncalibrated, and a fixed similarity threshold (the original used 0.92) depends on the embedding model. These are tunable defaults, not rules.
+- **Users must control memory.** They need to inspect, correct and delete what is remembered. Without that, selective memory becomes a privacy liability.
+
+## 7. Infrastructure capabilities required
+
+The vision needs these capabilities, not specific products. Product choices and their trade-offs are recorded in ADRs.
+
+| Capability | Why it is needed | Decided in |
+|---|---|---|
+| Durable, transactional state store | Ledger, checkpoints, verified attributes and memory must survive crashes; claims and status changes must be atomic | [ADR-004](../decisions/ADR-004-postgres-source-of-truth-valkey-for-coordination.md), [ADR-005](../decisions/ADR-005-versioned-migrations-alembic-sql.md) |
+| Durable workflow runtime with pause/resume | Threads wait for approval for days and must survive restarts | [ADR-003](../decisions/ADR-003-durable-orchestration-langgraph-dynamic-interrupt.md) |
+| Similarity search over facts | Deduplicating and recalling durable facts | ADR-004 (store), migration-time dimension (ADR-001 A11) |
+| Ephemeral messaging | Progress streaming and rate counters; losing it must never affect correctness | ADR-004 |
+| Self-hostable metasearch | Discovery without paid APIs (`CON-001`) | Implementation plan |
+| Headless browser | Live verification and tier-3 handlers | Implementation plan |
+| Isolated execution environment | Tier 4 without privileged containers | [ADR-008](../decisions/ADR-008-tier4-sandbox-isolation-backends.md) |
+| Model gateway | Local-first inference with optional compatible endpoints (`CON-004`) | Business rules |
+| Local test doubles for external systems | Deterministic, offline tests for send, read-back and fault injection | Implementation plan |
+
+## 8. Gaps the original did not address
+
+These cut across invariants and have no owner yet. Each should become a requirement, an ADR or an explicit non-goal.
+
+| Gap | Why it matters |
+|---|---|
+| Credential and secret handling | Connectors act in the user's name; token storage, scope minimization and revocation are central to trust |
+| Prompt injection as a threat model | Pages, emails and search results all flow into model context and drafts (see [security and trust boundaries](../architecture/security-and-trust-boundaries.md)) |
+| Cancellation, deadlines and timeouts | A user must be able to stop a running batch; approvals and verifications need expiry |
+| Observability | Operators need traces across verify → gate → execute → read-back to debug "unknown" outcomes |
+| Rate limiting and politeness | Verification and browser handlers hit third-party sites; uncontrolled fan-out gets the user blocked |
+| Legal and terms-of-service limits on automation | Some targets prohibit automated access; fallback to the browser can breach those terms |
+| Evaluation of model-dependent steps | Extraction, drafting and distillation quality need measurable checks, not only structural tests |
+
+## 9. What the original got wrong as a document
+
+For the record, so the same pattern is not repeated in specs:
+
+- **It mixed vision with implementation.** DDL, class definitions, library lists and exact directory trees fixed decisions before any trade-off was examined. Several were later found to be wrong (ADR-001 A1–A11).
+- **It prescribed one coding agent.** Instructions to save the file as an agent-specific config and feed it prompts phase by phase belong in a workflow, not in an architecture. This repository's workflow is agent-neutral ([CraftRail](../../framework/workflow.md)).
+- **Its tests used a real business name.** Scenarios should use fictional entities.
+- **It overclaimed.** "Guarantee zero duplicate side effects" and "immutable ledger" were stated as properties the design did not have.
+- **Typos and orphaned numbering** ("Rule 3"–"Rule 8") suggested unedited generated text.
+
+## 10. Traceability
+
+| Invariant | Requirements | Decisions |
+|---|---|---|
+| 1 Tiered routing | `FR-001`–`FR-004`, `FR-025` | ADR-008 |
+| 2 Ground-truth verification | `FR-005`–`FR-008` | ADR-001 A7 |
+| 3 Batch preparation | `FR-009` | ADR-003 |
+| 4 Consequence gate | `FR-010`–`FR-012`, `BR-001`, `BR-002`, `BR-005`, `BR-006` | ADR-001 A1, ADR-003 |
+| 5 Idempotency and read-back | `FR-013`–`FR-017`, `BR-003` | ADR-001 A2–A4, A8, ADR-004, ADR-007 |
+| 6 Reporting and memory | `FR-020`–`FR-023`, `BR-004` | ADR-001 A11 |
+
+## 11. Open questions for the owner
+
+1. Must a tier change after approval go back to the gate, or can approval name the allowed tiers?
+2. Should the action lifecycle gain an explicit "outcome unknown, needs human" state?
+3. Should consequence gain a second dimension (severity or reversibility), and should it be evaluated per action rather than per capability?
+4. Should the ledger become append-only events, with status derived from them?
+5. Should recalled entity facts always be re-verified before use, or only once they pass their freshness window?
+6. Which gaps in §8 belong in v1, and which are explicit non-goals?

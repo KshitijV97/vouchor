@@ -7,7 +7,7 @@ Python package layout (`src/vouchor/`, see [ADR-002](../decisions/ADR-002-python
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `core/contracts.py` | Pydantic v2 models and enums (blueprint §2.3, amended per ADRs) | — |
+| `core/contracts.py` | Pydantic v2 models and enums (original blueprint §2.3 at commit `ac5b91d`, amended per ADRs) | — |
 | `core/config.py` | `pydantic-settings` configuration | — |
 | `core/ledger.py` | Ledger repository, state-transition guard, row locking | `asyncpg` |
 | `core/llm.py` | LLM client protocol + LiteLLM implementation + deterministic fake | `httpx` |

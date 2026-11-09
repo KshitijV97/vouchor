@@ -8,7 +8,7 @@
 | BR-004 | BR | Durable memory MUST NOT store drafts, DOM state, retry logs, credentials, or message bodies. | Invariant 6; privacy | Distiller tests / Owner | proposed |
 | BR-005 | BR | Vouchor v1 MUST NOT perform payments, purchases, trades or fund transfers. | Risk boundary | Capability allow-list / Owner | proposed |
 | BR-006 | BR | Reading user data (email, calendar, notes) is `READ_ONLY` but MUST be limited to the scopes the user granted and never forwarded to third parties without a consequential approval. | Privacy | OAuth scope tests / Owner | proposed |
-| CON-001 | CON | All runtime and development dependencies MUST be free and open-source; no paid SaaS is required to run or test the system. | Blueprint §1.2; owner preference | Dependency licence check in CI / Owner | proposed |
-| CON-002 | CON | Python 3.12+, async-native code; no blocking I/O inside async nodes. | Blueprint §3.2 | Ruff `ASYNC` rules + review | proposed |
+| CON-001 | CON | All runtime and development dependencies MUST be free and open-source; no paid SaaS is required to run or test the system. | Original blueprint §1.2 (commit `ac5b91d`); owner preference | Dependency licence check in CI / Owner | proposed |
+| CON-002 | CON | Python 3.12+, async-native code; no blocking I/O inside async nodes. | Original blueprint §3.2 (commit `ac5b91d`) | Ruff `ASYNC` rules + review | proposed |
 | CON-003 | CON | Deployment artefacts MUST be platform-agnostic: OCI images, Helm chart, OpenTofu. Provider-specific code is limited to thin OpenTofu cluster modules. | Owner requirement | Review; [ADR-006](../decisions/ADR-006-portable-deployment-kubernetes-helm-opentofu.md) | proposed |
-| CON-004 | CON | Default LLM endpoint is local (Ollama via LiteLLM); any OpenAI-compatible endpoint MAY be configured. | Blueprint §3.2 | Config tests | proposed |
+| CON-004 | CON | Default LLM endpoint is local (Ollama via LiteLLM); any OpenAI-compatible endpoint MAY be configured. | Original blueprint §3.2 (commit `ac5b91d`) | Config tests | proposed |

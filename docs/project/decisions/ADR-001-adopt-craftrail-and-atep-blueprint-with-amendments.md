@@ -30,7 +30,7 @@ Use CraftRail's workflow (spec → plan → tasks → verify → converge) for e
 ## Alternatives considered
 
 - Implement the blueprint verbatim: rejected; A1–A4 violate invariants 4–5.
-- Rewrite the blueprint file: rejected; it is the historical vision input. Amendments live here.
+- Rewrite the blueprint file: originally rejected because it is the historical vision input. **Revised 2026-11-09 at the owner's direction:** the blueprint is now an implementation-agnostic vision with a critical review of each invariant. The technology-specific text quoted in the table above is preserved in Git at commit `ac5b91d`. Amendments still live here.
 
 ## Consequences
 

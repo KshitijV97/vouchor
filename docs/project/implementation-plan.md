@@ -95,7 +95,7 @@ Plus: a fresh-clone job in CI reaches a running stack with `make setup up` (`NFR
 **Tasks**
 
 1. Migration `0001`: `verified_sources`, `execution_ledger` (+ `attempt_count` fencing, `lease_expires_at`, `payload_hash`), `durable_memories` (vector dimension from config), enums ([ADR-001](decisions/ADR-001-adopt-craftrail-and-atep-blueprint-with-amendments.md) A11). LangGraph `setup()` in the migrate job.
-2. `core/contracts.py` per blueprint §2.3 with amendments A7 (conditional verification requirement). Hypothesis tests: idempotency key is deterministic, order-insensitive on payload keys, and changes when any field changes.
+2. `core/contracts.py` per the original blueprint §2.3 (commit `ac5b91d`) with amendments A7 (conditional verification requirement). Hypothesis tests: idempotency key is deterministic, order-insensitive on payload keys, and changes when any field changes.
 3. `core/ledger.py`: repository with a transition guard implementing the [state machine](architecture/data-flow.md); illegal transitions raise. Property-based test generates random transition sequences.
 4. `orchestrator/registry.py` with load-time validation (`FR-002`).
 5. `orchestrator/state.py`, `graph.py`; nodes as stubs for discovery/verifier driven by fixture data; real `staging` and `gate` (dynamic `interrupt()`, [ADR-003](decisions/ADR-003-durable-orchestration-langgraph-dynamic-interrupt.md)).
