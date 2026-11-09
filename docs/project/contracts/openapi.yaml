@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: Example service API
+  version: 0.1.0
+  description: Replace this illustrative starter with the project's reviewed API contract.
+paths:
+  /health:
+    get:
+      summary: Report service health
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: healthy

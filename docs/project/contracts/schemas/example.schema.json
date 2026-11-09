@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/example.schema.json",
+  "title": "Example payload",
+  "description": "Illustrative JSON Schema; replace the reserved example.invalid identifier.",
+  "type": "object",
+  "required": ["id", "status"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "enum": ["active", "inactive"]}
+  },
+  "additionalProperties": false
+}
