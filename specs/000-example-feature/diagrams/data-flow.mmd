@@ -1,0 +1,7 @@
+flowchart LR
+    title Account recovery request data flow — illustrative
+    User[User address] --> Form[Input validation]
+    Form -->|valid| Service[Recovery service]
+    Service --> Decision{Account match?}
+    Decision -->|either result| Response[Same neutral response]
+    Form -->|invalid| Feedback[Validation feedback]

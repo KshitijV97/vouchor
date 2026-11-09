@@ -1,0 +1,5 @@
+flowchart LR
+    title[Data flow — replace with reviewed flow]
+    Source[Source] --> Validate[Validation]
+    Validate -->|accepted| Store[(Store)]
+    Validate -->|rejected| Error[Error path]

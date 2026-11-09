@@ -1,0 +1,8 @@
+stateDiagram-v2
+    title Lifecycle state — replace with reviewed states
+    [*] --> Draft
+    Draft --> Active: approved
+    Active --> Complete: verified
+    Active --> Blocked: dependency unavailable
+    Blocked --> Active: dependency resolved
+    Complete --> [*]

@@ -1,0 +1,12 @@
+sequenceDiagram
+    title Account recovery request — illustrative, not a security design
+    actor User
+    participant UI as Recovery form
+    participant API as Recovery endpoint
+    participant Service as Recovery service
+    User->>UI: Submit address
+    UI->>API: Validated request
+    API->>Service: Request recovery
+    Service-->>API: Neutral result
+    API-->>UI: Generic confirmation
+    UI-->>User: Show confirmation
