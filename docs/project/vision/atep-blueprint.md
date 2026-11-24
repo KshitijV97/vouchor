@@ -1,3 +1,8 @@
+---
+title: "ATEP blueprint: architecture vision for AI agents that act safely"
+description: "What an AI agent engine must guarantee before it acts for you: tiered routing, facts checked at the source, one approval per batch, exactly-once actions and honest reports, with a critical review of each idea."
+---
+
 # Autonomous Tiered Execution Platform (ATEP) — architecture vision
 
 - **Status:** historical vision input, refined

@@ -1,7 +1,7 @@
 [project]
 site_name = "Vouchor"
 site_description = "Self-hosted, open-source agent engine: verified facts, one approval per batch, exactly-once actions, honest reports."
-site_url = "https://vouchor-docs.example.invalid"
+site_url = "https://vouchor.vercel.app/"
 docs_dir = "docs"
 site_dir = "site"
 strict = true
@@ -64,6 +64,8 @@ nav = [
 extra_css = ["stylesheets/extra.css"]
 
 [project.theme]
+# Overrides add link-preview (Open Graph / Twitter) metadata; see overrides/main.html.
+custom_dir = "overrides"
 features = [
   "navigation.sections",
   "navigation.path",

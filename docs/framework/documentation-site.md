@@ -41,6 +41,12 @@ The generated `site/` directory is ignored by Git. Commit source Markdown, `zens
 
 The deployed project is named `craft-rail-docs` and builds from the repository root. Its generated site is published at [craft-rail-docs.vercel.app](https://craft-rail-docs.vercel.app). GitHub integration could not be connected to the owner's repository from the current Vercel account, so this deployment was created through the CLI. Vercel will not automatically rebuild on GitHub pushes until that integration is connected.
 
+## Link previews
+
+Pages carry Open Graph and Twitter card tags so shared links show a title, description and image. `overrides/main.html` (set as the theme's `custom_dir` in `zensical.toml`) adds them. Each page uses its front matter `title` and `description` when present, otherwise its heading and the site description. All URLs are built from `site_url`, so keep it set to the deployed origin (`https://vouchor.vercel.app/`).
+
+The share image is `docs/images/social-card.png` (1200×630). To change it, edit and run the maintainer script `tools/social_card.py`; its docstring lists the one-off Pillow install and the Roboto font it needs. Neither is part of the site build.
+
 ## How to update the site
 
 The source of every page is committed under `docs/`. To change existing guidance, edit its Markdown file; to add a page, create a Markdown file and add it to the explicit `nav` list in `zensical.toml`. Images and CSS live in `docs/images/` and `docs/stylesheets/`. Do not edit `site/`: it is generated output and ignored by Git. The site is a rendered view of the canonical repository documentation, so those source files remain usable without Vercel.
