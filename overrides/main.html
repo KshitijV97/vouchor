@@ -1,0 +1,47 @@
+{#-
+  Theme override: link-preview metadata (Open Graph and Twitter cards).
+  Each page uses its front matter `title`/`description` when set, else its
+  heading and the site description. `site_url` in zensical.toml must be the
+  deployed origin so every URL here is absolute. The share image is generated
+  by tools/social_card.py.
+-#}
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {%- set site_root = config.site_url | trim("/") -%}
+  {%- set preview_url = page.canonical_url or (site_root ~ "/") -%}
+  {#- Zensical 0.1.0 does not set page.is_homepage, so compare URLs. -#}
+  {%- set is_home = page.is_homepage or preview_url == site_root ~ "/" -%}
+  {%- if page.meta and page.meta.title and is_home -%}
+    {%- set preview_title = page.meta.title -%}
+  {%- elif page.meta and page.meta.title -%}
+    {%- set preview_title = page.meta.title ~ " - " ~ config.site_name -%}
+  {%- elif page.title and not is_home -%}
+    {%- set preview_title = (page.title | striptags) ~ " - " ~ config.site_name -%}
+  {%- else -%}
+    {%- set preview_title = config.site_name -%}
+  {%- endif -%}
+  {%- if page.meta and page.meta.description -%}
+    {%- set preview_description = page.meta.description -%}
+  {%- else -%}
+    {%- set preview_description = config.site_description -%}
+  {%- endif -%}
+  {%- set preview_image = site_root ~ "/images/social-card.png" -%}
+  {%- set preview_image_alt = "Vouchor: an AI assistant that does real work for you, and proves it." %}
+  <meta property="og:type" content="{{ 'website' if is_home else 'article' }}">
+  <meta property="og:site_name" content="{{ config.site_name | e }}">
+  <meta property="og:title" content="{{ preview_title | e }}">
+  <meta property="og:description" content="{{ preview_description | e }}">
+  <meta property="og:url" content="{{ preview_url }}">
+  <meta property="og:image" content="{{ preview_image }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ preview_image_alt | e }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ preview_title | e }}">
+  <meta name="twitter:description" content="{{ preview_description | e }}">
+  <meta name="twitter:image" content="{{ preview_image }}">
+  <meta name="twitter:image:alt" content="{{ preview_image_alt | e }}">
+{% endblock %}
